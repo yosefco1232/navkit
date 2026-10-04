@@ -4,4 +4,4 @@ from navkit.geometry import Point, Pose
 from navkit.grid_map import OccupancyGrid
 
 __all__ = ["OccupancyGrid", "Point", "Pose"]
-__version__ = "0.1.0"
+__version__ = "0.2.0"
