@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import itertools
 import math
 from pathlib import Path
 
@@ -44,6 +45,44 @@ def plot_result(grid: OccupancyGrid, result: SimResult, goal: Point, title: str 
     ax.plot(goal.x, goal.y, "*", color="tab:red", ms=16, label="goal")
     ax.set_title(title or result.summary())
     ax.legend(loc="upper left", bbox_to_anchor=(1.01, 1.0), fontsize=8)
+    fig.tight_layout()
+    return fig
+
+
+def _speeds(result: SimResult) -> tuple[list[float], list[float]]:
+    """Speed over time, recovered from consecutive poses."""
+    traj = result.trajectory
+    if len(traj) < 2:
+        return [0.0], [0.0]
+    dt = result.elapsed / (len(traj) - 1)
+    speeds = [a.position.distance_to(b.position) / dt for a, b in itertools.pairwise(traj)]
+    return [dt * (i + 1) for i in range(len(speeds))], speeds
+
+
+def plot_comparison(grid: OccupancyGrid, results: dict[str, SimResult], goal: Point) -> Figure:
+    """One map panel per configuration, plus a shared speed-over-time panel."""
+    n = len(results)
+    fig = plt.figure(figsize=(6 * n, 7.5))
+    gs = fig.add_gridspec(2, n, height_ratios=[3, 1.3])
+    colors = ["tab:orange", "tab:purple", "tab:cyan", "tab:brown"]
+    speed_ax = fig.add_subplot(gs[1, :])
+    for i, (name, result) in enumerate(results.items()):
+        color = colors[i % len(colors)]
+        ax = fig.add_subplot(gs[0, i])
+        draw_grid(ax, grid)
+        if result.path:
+            ax.plot([p.x for p in result.path], [p.y for p in result.path], "--", color="tab:blue", lw=1, label="plan")
+        traj = result.trajectory
+        ax.plot([p.x for p in traj], [p.y for p in traj], color=color, lw=2.2, label="trajectory")
+        ax.plot(goal.x, goal.y, "*", color="tab:red", ms=14)
+        ax.set_title(f"{name}\n{result.summary()}", fontsize=9)
+        ax.legend(loc="lower left", fontsize=7)
+        t, v = _speeds(result)
+        speed_ax.plot(t, v, color=color, label=name)
+    speed_ax.set_xlabel("time [s]")
+    speed_ax.set_ylabel("speed [m/s]")
+    speed_ax.grid(alpha=0.3)
+    speed_ax.legend(fontsize=8)
     fig.tight_layout()
     return fig
 
