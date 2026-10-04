@@ -76,13 +76,42 @@ class OccupancyGrid:
     def is_free_world(self, p: Point) -> bool:
         return self.is_free(self.world_to_cell(p))
 
+    def clearance(self, p: Point, max_distance: float) -> float:
+        """Exact distance from ``p`` to the nearest occupied cell (treated as a square).
+
+        Only cells within ``max_distance`` are examined, so the cost is O(window area),
+        not O(map size). Returns ``max_distance`` if nothing is that close. Points outside
+        the map have zero clearance.
+        """
+        if not self.in_bounds(self.world_to_cell(p)):
+            return 0.0
+        res, half = self.resolution, self.resolution / 2.0
+        r0, r1 = math.floor((p.y - max_distance) / res), math.floor((p.y + max_distance) / res)
+        c0, c1 = math.floor((p.x - max_distance) / res), math.floor((p.x + max_distance) / res)
+        window = self._occupied[max(r0, 0) : max(r1 + 1, 0), max(c0, 0) : max(c1 + 1, 0)]
+        rows, cols = np.nonzero(window)
+        if len(rows) == 0:
+            return max_distance
+        cx = (cols + max(c0, 0) + 0.5) * res
+        cy = (rows + max(r0, 0) + 0.5) * res
+        # Distance from a point to an axis-aligned square of half-size h: |max(|p - c| - h, 0)|
+        dx = np.maximum(np.abs(p.x - cx) - half, 0.0)
+        dy = np.maximum(np.abs(p.y - cy) - half, 0.0)
+        return min(max_distance, float(np.hypot(dx, dy).min()))
+
+    def collides(self, p: Point, radius: float) -> bool:
+        """True if a disk of ``radius`` centered at ``p`` overlaps any obstacle."""
+        return self.clearance(p, radius + self.resolution) < radius
+
     # -- operations --------------------------------------------------------
     def inflate(self, radius: float) -> OccupancyGrid:
         """Return a new grid with obstacles grown by ``radius`` meters.
 
         Planning on the inflated grid lets us treat a round robot as a point.
         """
-        r = math.ceil(radius / self.resolution)
+        # The epsilon absorbs floating-point noise: 0.2 + 0.1 == 0.30000000000000004, and
+        # ceil(0.30000000000000004 / 0.1) would give 4 cells instead of 3.
+        r = math.ceil(radius / self.resolution - 1e-9)
         if r <= 0:
             return OccupancyGrid(self._occupied, self.resolution)
         h, w = self._occupied.shape

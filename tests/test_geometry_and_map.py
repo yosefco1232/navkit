@@ -82,3 +82,13 @@ def test_parse_ascii_map_orientation_and_markers() -> None:
 def test_parse_ascii_map_rejects_bad_input(bad: str) -> None:
     with pytest.raises(MapFormatError):
         parse_ascii_map(bad, 1.0)
+
+
+def test_inflate_is_robust_to_floating_point_noise() -> None:
+    occ = np.zeros((11, 11), dtype=bool)
+    occ[5, 5] = True
+    grid = OccupancyGrid(occ, resolution=0.1)
+    # 0.2 + 0.1 is 0.30000000000000004 in floating point; it must still mean 3 cells.
+    assert grid.inflate(0.2 + 0.1).occupied.sum() == grid.inflate(0.3).occupied.sum()
+    assert not grid.inflate(0.2 + 0.1).is_free((5, 8))
+    assert grid.inflate(0.2 + 0.1).is_free((5, 9))

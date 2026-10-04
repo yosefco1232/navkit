@@ -25,10 +25,13 @@ class RobotLimits:
     max_angular: float = 2.0  # rad/s
     max_linear_accel: float = 1.5  # m/s^2
     max_angular_accel: float = 6.0  # rad/s^2
+    response_time: float = 0.0  # s, first-order motor lag (time constant); 0 = instant
 
     def __post_init__(self) -> None:
         if min(self.max_linear, self.max_angular, self.max_linear_accel, self.max_angular_accel) <= 0:
             raise ValueError("all limits must be positive")
+        if self.response_time < 0:
+            raise ValueError("response_time must be non-negative")
 
 
 class DifferentialDriveRobot:
@@ -44,6 +47,14 @@ class DifferentialDriveRobot:
         if dt <= 0:
             raise ValueError("dt must be positive")
         target = self._saturate(cmd)
+        if self.limits.response_time > 0:
+            # First-order lag, like a motor with inertia: v' = (v_cmd - v) / tau.
+            # Exact discretization: the velocity closes a fraction alpha of the gap each step.
+            alpha = 1.0 - math.exp(-dt / self.limits.response_time)
+            target = Twist(
+                self.velocity.linear + alpha * (target.linear - self.velocity.linear),
+                self.velocity.angular + alpha * (target.angular - self.velocity.angular),
+            )
         v = _approach(self.velocity.linear, target.linear, self.limits.max_linear_accel * dt)
         w = _approach(self.velocity.angular, target.angular, self.limits.max_angular_accel * dt)
         self.velocity = Twist(v, w)
