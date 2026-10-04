@@ -116,6 +116,7 @@ Notable tests:
 - `test_integrate_half_circle` checks the kinematic model against the closed-form solution.
 - `test_warehouse_end_to_end` runs the full pipeline and asserts the robot never enters an obstacle.
 
+
 ## License
 
 MIT
