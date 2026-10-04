@@ -16,19 +16,22 @@ def test_warehouse_end_to_end() -> None:
     result = run_navigation(spec.grid, spec.start, spec.goal, AStarPlanner(), PurePursuitController())
     assert result.outcome is Outcome.REACHED, result.summary()
     assert result.driven_length < 1.3 * result.planned_length
-    assert all(spec.grid.is_free_world(p.position) for p in result.trajectory)
+    # The robot's whole footprint (not just its center) stays clear of obstacles.
+    assert not any(spec.grid.collides(p.position, 0.2) for p in result.trajectory)
 
 
 def test_no_path_when_goal_is_enclosed() -> None:
     text = "\n".join(
         [
-            "##############",
-            "#.....#......#",
-            "#.....#......#",
-            "#..S..#...G..#",
-            "#.....#......#",
-            "#.....#......#",
-            "##############",
+            "####################",
+            "#........#.........#",
+            "#........#.........#",
+            "#........#.........#",
+            "#....S...#....G....#",
+            "#........#.........#",
+            "#........#.........#",
+            "#........#.........#",
+            "####################",
         ]
     )
     spec = parse_ascii_map(text, resolution=0.1)

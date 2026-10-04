@@ -9,7 +9,7 @@ from navkit.control.pure_pursuit import PurePursuitController
 from navkit.geometry import Point, Pose, path_length
 from navkit.grid_map import OccupancyGrid
 from navkit.planning.base import Planner
-from navkit.robot import DifferentialDriveRobot, RobotLimits
+from navkit.robot import DifferentialDriveRobot, RobotLimits, Twist
 
 
 class Outcome(enum.Enum):
@@ -23,8 +23,10 @@ class Outcome(enum.Enum):
 class SimConfig:
     dt: float = 0.05  # s
     max_time: float = 120.0  # s
-    robot_radius: float = 0.2  # m, used to inflate obstacles for planning
-    limits: RobotLimits = field(default_factory=RobotLimits)
+    robot_radius: float = 0.2  # m, the robot's real footprint, used for collision checks
+    safety_margin: float = 0.1  # m, extra inflation for planning only
+    # A real drive does not reach the commanded speed instantly; 0.25 s is typical for small robots.
+    limits: RobotLimits = field(default_factory=lambda: RobotLimits(response_time=0.25))
 
 
 @dataclass
@@ -58,7 +60,9 @@ def run_navigation(
     config: SimConfig | None = None,
 ) -> SimResult:
     cfg = config or SimConfig()
-    planning_grid = grid.inflate(cfg.robot_radius)
+    # Plan with extra margin, but judge collisions against the real footprint: the gap
+    # between the two is the room the controller has to deviate from the path.
+    planning_grid = grid.inflate(cfg.robot_radius + cfg.safety_margin)
     path = planner.plan(planning_grid, start.position, goal)
     if path is None:
         return SimResult(Outcome.NO_PATH, [], [start], 0.0)
@@ -68,12 +72,18 @@ def run_navigation(
     trajectory = [start]
     t = 0.0
     while t < cfg.max_time:
-        cmd = controller.compute(robot.pose)
-        if controller.done:
+        cmd = controller.compute(robot.pose, robot.velocity.linear)
+        # "Reached" means at the goal *and* stopped: a robot that arrives at speed still
+        # needs room to brake, and that braking must be collision-checked too.
+        if controller.done and _is_stopped(robot.velocity):
             return SimResult(Outcome.REACHED, path, trajectory, t)
         pose = robot.step(cmd, cfg.dt)
         t += cfg.dt
         trajectory.append(pose)
-        if not grid.is_free_world(pose.position):
+        if grid.collides(pose.position, cfg.robot_radius):
             return SimResult(Outcome.COLLISION, path, trajectory, t)
     return SimResult(Outcome.TIMEOUT, path, trajectory, t)
+
+
+def _is_stopped(velocity: Twist, tol: float = 0.01) -> bool:
+    return abs(velocity.linear) < tol and abs(velocity.angular) < tol
